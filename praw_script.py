@@ -3,7 +3,6 @@ import praw, time, sqlite3, datetime, requests, sys
 #TODO actuall a note --zr and zm to open and close fold levels
 #TODO start/endtime at end of script
 #TODO conform all sql to follow same syntax for variable substitution
-#TODO make banlist a table
 
 def handle_interrupt( function ):
     def wrapped(*args, **kwargs):
@@ -26,11 +25,16 @@ def handle_interrupt( function ):
 
 @handle_interrupt
 def get_newusers (cursor, connection, r, cap=990):
-    banlist=['tldrbot','templatebot','TotesMessenger','ExpectedFactorialBot','image_linker_bot','thelinkfixerbot','youtubefactsbot','autotldr']
+    #Initialize three lists, a list of existing users, a list of banned authors
+    # and an empty list to keep track of distinct new users
+    sql_cmd="SELECT author FROM bots"
+    cursor.execute(sql_cmd)
+    botbanlist=[ x[0] for x in cursor.fetchall() ]
     sql_cmd="SELECT * FROM redditauthors"
     cursor.execute(sql_cmd)
     name_exists=[ x[0] for x in cursor.fetchall() ]
     just_added=[]
+
     subreddit=r.get_subreddit('columbus')
     count=1
     for comment in praw.helpers.comment_stream(r,subreddit, limit = 1000):
@@ -38,16 +42,14 @@ def get_newusers (cursor, connection, r, cap=990):
         count+=1
         if count >= cap:
             break
-        elif author in name_exists or author in banlist:
+        elif author in name_exists or author in botbanlist or author in just_added:
             continue
-        elif author not in just_added:
+        else:
             just_added.append(author)
             cursor.execute("INSERT INTO redditauthors VALUES('{}', 99 )".format(author))
             connection.commit()
             print('\b'*len(author), end='')
             print( 'inserted ', author, flush=True)
-        else:
-            continue
 
 @handle_interrupt
 def row_insert(cursor,connection,redditor,commentname_dict,user):
@@ -67,8 +69,8 @@ def row_insert(cursor,connection,redditor,commentname_dict,user):
         connection.commit()
 
         if count == 100:
-            columns=[str(comment.author) ,str(comment.created_utc) , str(comment.name)]
-            sql_cmd="INSERT INTO limit_warning VALUES(?,?,?)"
+            columns=[str(comment.author) ,str(upd_ts) , str(comment.name)]
+            sql_cmd="INSERT INTO commentlimit VALUES(?,?,?)"
             cursor.execute(sql_cmd,columns)
             connection.commit()
         count+=1
@@ -86,14 +88,12 @@ def chunk_insert(cursor,connection,redditor):
     cursor.executemany( "INSERT INTO reddituserdata_v3 VALUES(?,?,?,?,?,?,?)", chunk )
     connection.commit()
 
-
 def update_post_frequency(cursor,connection):
     now = datetime.datetime.utcnow().timestamp()
     sql_cmd="REPLACE into redditauthors " \
-            "SELECT author," \
-            "count(*)/(({}-min(created_ts))/86400)" \
-            "FROM reddituserdata_v3" \
-            "GROUP BY author;".format(now)
+            "SELECT author,count(*)/(({}-min(created_ts))/86400) " \
+            "FROM reddituserdata_v3 " \
+            "GROUP BY author".format(now)
     cursor.execute(sql_cmd)
     connection.commit()
 
@@ -105,7 +105,7 @@ def frequency_scheduler(cursor, connection, r):
     if hour in (0,12):
         get_newusers(cursor, connection, r)
         sql_cmd="SELECT author FROM redditauthors WHERE postrate > 10 "
-    #schedule infrequent posters every ~3 days
+    #schedule infrequent posters every 2 or 7 days
     if hour == 1:
         if day%2 == 0:
             sql_cmd="SELECT author from redditauthors where postrate <= 10 and postrate > 1"
@@ -125,17 +125,17 @@ def fetch_latest_comment(cursor):
     commentname_dict = { x[0]:x[1] for x in maxcreated }
     return(commentname_dict)
 
-
 def remove_user(cursor,connection,user):
     print( 'reddit user account was likely deleted...')
     print( 'username will be removed from initial query...')
-    sql_cmd="DELETE FROM redditauthors where username='{}'".format(user)
+    sql_cmd="DELETE FROM redditauthors where author='{}'".format(user)
     cursor.execute(sql_cmd)
     connection.commit()
 
-
 def main():
     #Create user_agent per PRAW standards, establish local db access
+    print(  datetime.datetime.now() )
+    print( "\nstarting..." )
     user_agent = 'last 1000 comments for users from r/Columbus by /u/undelimited'
     r = praw.Reddit(user_agent=user_agent)
     connection = sqlite3.connect('/home/dan/reddit.db')
@@ -153,7 +153,7 @@ def main():
         usernum+=1
         user = str(users_queue.pop())
         redditor = r.get_redditor(user)
-        print('\n','user ', usernum,'/', userstotal,' ==>> ', redditor, sep='')
+        print('user ', usernum,'/', userstotal,' ==>> ', redditor, sep='')
 
         #Check if user exists in our sqlite3 db
         if commentname_dict.get(user) is None:

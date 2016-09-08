@@ -1,5 +1,5 @@
 CREATE TABLE redditusercomments (author text, thread text, body text, subreddit text, created_ts text, name text, insert_ts text);
 CREATE TABLE redditauthors (author text PRIMARY KEY, postrate real);
 CREATE TABLE commentlimit (author string, insert_ts text, name text);
-CREATE TABLE bots (author string, insert_ts text);
+CREATE TABLE bots (author string);
 
