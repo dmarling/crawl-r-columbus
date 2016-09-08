@@ -4,7 +4,6 @@ import praw, time, sqlite3, datetime, requests, sys
 #TODO start/endtime at end of script
 #TODO conform all sql to follow same syntax for variable substitution
 #TODO make banlist a table
-#TODO clear postfrequency table based on whether or not they are in the username tables. Possible to combine these 2 tables?!??
 
 def handle_interrupt( function ):
     def wrapped(*args, **kwargs):
@@ -28,7 +27,7 @@ def handle_interrupt( function ):
 @handle_interrupt
 def get_newusers (cursor, connection, r, cap=990):
     banlist=['tldrbot','templatebot','TotesMessenger','ExpectedFactorialBot','image_linker_bot','thelinkfixerbot','youtubefactsbot','autotldr']
-    sql_cmd="SELECT * FROM redditusernames_v2"
+    sql_cmd="SELECT * FROM redditauthors"
     cursor.execute(sql_cmd)
     name_exists=[ x[0] for x in cursor.fetchall() ]
     just_added=[]
@@ -43,7 +42,7 @@ def get_newusers (cursor, connection, r, cap=990):
             continue
         elif author not in just_added:
             just_added.append(author)
-            cursor.execute("INSERT INTO redditusernames_v2 VALUES('{}')".format(author))
+            cursor.execute("INSERT INTO redditauthors VALUES('{}', 99 )".format(author))
             connection.commit()
             print('\b'*len(author), end='')
             print( 'inserted ', author, flush=True)
@@ -90,11 +89,11 @@ def chunk_insert(cursor,connection,redditor):
 
 def update_post_frequency(cursor,connection):
     now = datetime.datetime.utcnow().timestamp()
-    sql_cmd="REPLACE into postfrequency_v2 " \
+    sql_cmd="REPLACE into redditauthors " \
             "SELECT author," \
             "count(*)/(({}-min(created_ts))/86400)" \
-            "FROM " \
-            "reddituserdata_v3 group by author;".format(now)
+            "FROM reddituserdata_v3" \
+            "GROUP BY author;".format(now)
     cursor.execute(sql_cmd)
     connection.commit()
 
@@ -105,17 +104,14 @@ def frequency_scheduler(cursor, connection, r):
     #note that new users do not yet have a unique row in postfrequency
     if hour in (0,12):
         get_newusers(cursor, connection, r)
-        sql_cmd="SELECT author FROM postfrequency_v2 WHERE postrate > 10 " \
-                "UNION " \
-                "SELECT username FROM redditusernames_v2 WHERE username NOT IN " \
-                "(SELECT author FROM postfrequency_v2)"
+        sql_cmd="SELECT author FROM redditauthors WHERE postrate > 10 "
     #schedule infrequent posters every ~3 days
     if hour == 1:
         if day%2 == 0:
-            sql_cmd="SELECT author from postfrequency_v2 where postrate <= 10 and postrate > 1"
+            sql_cmd="SELECT author from redditauthors where postrate <= 10 and postrate > 1"
     if hour == 2:
         if day%7 == 0:
-            sql_cmd="SELECT author from postfrequency_v2 where postrate <= 1"
+            sql_cmd="SELECT author from redditauthors where postrate <= 1"
 
     cursor.execute(sql_cmd)
     users_queue=cursor.fetchall()
@@ -133,7 +129,7 @@ def fetch_latest_comment(cursor):
 def remove_user(cursor,connection,user):
     print( 'reddit user account was likely deleted...')
     print( 'username will be removed from initial query...')
-    sql_cmd="DELETE FROM redditusernames_v2 where username='{}'".format(user)
+    sql_cmd="DELETE FROM redditauthors where username='{}'".format(user)
     cursor.execute(sql_cmd)
     connection.commit()
 
