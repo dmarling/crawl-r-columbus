@@ -46,7 +46,8 @@ def get_newusers (cursor, connection, r, cap=990):
             continue
         else:
             just_added.append(author)
-            cursor.execute("INSERT INTO redditauthors VALUES('{}', 99 )".format(author))
+#            cursor.execute("INSERT INTO redditauthors VALUES('{}', 99 )".format(author))
+            cursor.execute("INSERT INTO redditauthors VALUES(?,?)", [author, 99])
             connection.commit()
             print('\b'*len(author), end='')
             print( 'inserted ', author, flush=True)
@@ -62,7 +63,7 @@ def row_insert(cursor,connection,redditor,commentname_dict,user):
         print(count, end='', flush=True)
         encode_body = str(comment.body.encode('utf-8'))
 
-        cursor.execute("INSERT INTO reddituserdata_v3 VALUES(?,?,?,?,?,?,?)",
+        cursor.execute("INSERT INTO redditusercomments VALUES(?,?,?,?,?,?,?)",
         [str(comment.author), str(comment.link_title), str(encode_body),
         str(comment.subreddit), str(comment.created_utc), str(comment.name),
         str(upd_ts) ])
@@ -85,14 +86,14 @@ def chunk_insert(cursor,connection,redditor):
     str(comment.created_utc), str(comment.name), str(upd_ts))
     for comment in redditor.get_comments(limit=None)]
     print(len(chunk))
-    cursor.executemany( "INSERT INTO reddituserdata_v3 VALUES(?,?,?,?,?,?,?)", chunk )
+    cursor.executemany( "INSERT INTO redditusercomments VALUES(?,?,?,?,?,?,?)", chunk )
     connection.commit()
 
 def update_post_frequency(cursor,connection):
     now = datetime.datetime.utcnow().timestamp()
     sql_cmd="REPLACE into redditauthors " \
             "SELECT author,count(*)/(({}-min(created_ts))/86400) " \
-            "FROM reddituserdata_v3 " \
+            "FROM redditusercomments " \
             "GROUP BY author".format(now)
     cursor.execute(sql_cmd)
     connection.commit()
@@ -119,7 +120,7 @@ def frequency_scheduler(cursor, connection, r):
     return(users_queue)
 
 def fetch_latest_comment(cursor):
-    sql_cmd="SELECT author, max(name) FROM reddituserdata_v3 group by author"
+    sql_cmd="SELECT author, max(name) FROM redditusercomments group by author"
     cursor.execute(sql_cmd)
     maxcreated=cursor.fetchall()
     commentname_dict = { x[0]:x[1] for x in maxcreated }
@@ -129,6 +130,7 @@ def remove_user(cursor,connection,user):
     print( 'reddit user account was likely deleted...')
     print( 'username will be removed from initial query...')
     sql_cmd="DELETE FROM redditauthors where author='{}'".format(user)
+    print(sql_cmd)
     cursor.execute(sql_cmd)
     connection.commit()
 
@@ -174,6 +176,8 @@ def main():
     # them at an appropriate interval
     update_post_frequency(cursor, connection)
     cursor.close()
+    print( "\nend" )
+    print(  datetime.datetime.now() )
 
 if __name__ == '__main__':
     main()
