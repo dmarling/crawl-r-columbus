@@ -1,7 +1,6 @@
 import praw, time, sqlite3, datetime, requests, sys
 
 #TODO actuall a note --zr and zm to open and close fold levels
-#TODO start/endtime at end of script
 #TODO conform all sql to follow same syntax for variable substitution
 
 def handle_interrupt( function ):
@@ -46,7 +45,6 @@ def get_newusers (cursor, connection, r, cap=990):
             continue
         else:
             just_added.append(author)
-#            cursor.execute("INSERT INTO redditauthors VALUES('{}', 99 )".format(author))
             cursor.execute("INSERT INTO redditauthors VALUES(?,?)", [author, 99])
             connection.commit()
             print('\b'*len(author), end='')
@@ -94,6 +92,7 @@ def update_post_frequency(cursor,connection):
     sql_cmd="REPLACE into redditauthors " \
             "SELECT author,count(*)/(({}-min(created_ts))/86400) " \
             "FROM redditusercomments " \
+            "WHERE author in (select author from redditauthors)" \
             "GROUP BY author".format(now)
     cursor.execute(sql_cmd)
     connection.commit()
@@ -127,10 +126,8 @@ def fetch_latest_comment(cursor):
     return(commentname_dict)
 
 def remove_user(cursor,connection,user):
-    print( 'reddit user account was likely deleted...')
     print( 'username will be removed from initial query...')
     sql_cmd="DELETE FROM redditauthors where author='{}'".format(user)
-    print(sql_cmd)
     cursor.execute(sql_cmd)
     connection.commit()
 
@@ -142,7 +139,6 @@ def main():
     r = praw.Reddit(user_agent=user_agent)
     connection = sqlite3.connect('/home/dan/reddit.db')
     cursor = connection.cursor()
-
     users_queue=frequency_scheduler(cursor, connection, r)
     commentname_dict = fetch_latest_comment(cursor)
 
