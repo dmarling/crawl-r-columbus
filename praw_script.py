@@ -1,6 +1,5 @@
 import praw, time, sqlite3, datetime, requests, sys
 
-#TODO actuall a note --zr and zm to open and close fold levels
 #TODO conform all sql to follow same syntax for variable substitution
 
 def handle_interrupt( function ):
@@ -51,14 +50,13 @@ def get_newusers (cursor, connection, r, cap=990):
             print( 'inserted ', author, flush=True)
 
 @handle_interrupt
-def row_insert(cursor,connection,redditor,commentname_dict,user):
+def row_insert(cursor,connection,redditor,commentname_dict,user,count=1):
     #Insert row by row faster using incremental logic via max(name)
     upd_ts = datetime.datetime.now()
-    count=1
     for comment in redditor.get_comments(limit=None,
     params={'before':commentname_dict[user]}):
-        print('\b'*len(str( count )), end='')
-        print(count, end='', flush=True)
+#        print('\b'*len(str( count )), end='')
+#        print(count, end='', flush=True)
         encode_body = str(comment.body.encode('utf-8'))
 
         cursor.execute("INSERT INTO redditusercomments VALUES(?,?,?,?,?,?,?)",
@@ -73,6 +71,7 @@ def row_insert(cursor,connection,redditor,commentname_dict,user):
             cursor.execute(sql_cmd,columns)
             connection.commit()
         count+=1
+    print(count)
 
 @handle_interrupt
 def chunk_insert(cursor,connection,redditor):
@@ -165,6 +164,8 @@ def main():
                 row_insert(cursor,connection,redditor,commentname_dict,user)
             except praw.errors.NotFound:
                 remove_user(cursor, connection, user)
+            except:
+                print("unexpected error:", sys.exc_info()[0])
 
     print('finished loading records...\n')
     print('inserting into postfrequency table...\n')
